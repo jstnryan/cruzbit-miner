@@ -24,6 +24,7 @@ func main() {
 	// flags
 	pubKeyPtr := flag.String("pubkey", "", "A public key which receives newly mined block rewards")
 	peerPtr := flag.String("peer", "", "Address of a peer to connect to for receiving work")
+	numMinersPtr := flag.Int("numminers", 1, "Number of miners to run")
 	keyFilePtr := flag.String("keyfile", "", "Path to a file containing public keys to use when mining")
 	flag.Parse()
 
@@ -49,16 +50,6 @@ func main() {
 		log.Fatal(err)
 	}
 
-	// initialize OpenCL devices
-	var deviceCount int
-	if OPENCL_ENABLED {
-		deviceCount = OpenCLInit()
-		if deviceCount == -1 {
-			log.Fatal("Error initializing devices")
-		}
-		log.Printf("OpenCL initialized with %d device(s)\n", deviceCount)
-	}
-
 	// load genesis block
 	genesisBlock := new(cruzbit.Block)
 	if err := json.Unmarshal([]byte(cruzbit.GenesisBlockJson), genesisBlock); err != nil {
@@ -75,7 +66,7 @@ func main() {
 
 	// create and run miners
 	var miners []*Miner
-	for i := 0; i < deviceCount; i++ {
+	for i := 0; i < *numMinersPtr; i++ {
 		miner := NewMiner(genesisID, *peerPtr, pubKeys, i)
 		miners = append(miners, miner)
 		miner.Run()

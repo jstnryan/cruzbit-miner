@@ -6,7 +6,6 @@ package miner
 import (
 	"encoding/hex"
 	"hash"
-	"log"
 	"math/big"
 	"strconv"
 
@@ -151,15 +150,11 @@ func (h *BlockHeaderHasher) initBuffer(header *cruzbit.BlockHeader) {
 
 // Update is called everytime the header is updated and the caller wants its new hash value/ID.
 func (h *BlockHeaderHasher) Update(minerNum int, header *cruzbit.BlockHeader, target cruzbit.BlockID) (*big.Int, int64) {
-	var bufferChanged bool
-
 	if !h.initialized {
 		h.initBuffer(header)
-		bufferChanged = true
 	} else {
 		// hash_list_root
 		if h.previousHashListRoot != header.HashListRoot {
-			bufferChanged = true
 			// write out the new value
 			h.previousHashListRoot = header.HashListRoot
 			hex.Encode(h.buffer[h.hashListRootOffset:], header.HashListRoot[:])
@@ -169,7 +164,6 @@ func (h *BlockHeaderHasher) Update(minerNum int, header *cruzbit.BlockHeader, ta
 
 		// time
 		if h.previousTime != header.Time {
-			bufferChanged = true
 			h.previousTime = header.Time
 
 			// write out the new value
@@ -203,8 +197,7 @@ func (h *BlockHeaderHasher) Update(minerNum int, header *cruzbit.BlockHeader, ta
 		}
 
 		// nonce
-		if offset != 0 || (!OPENCL_ENABLED && h.previousNonce != header.Nonce) {
-			bufferChanged = true
+		if offset != 0 {
 			h.previousNonce = header.Nonce
 
 			// write out the new value (or old value at a new location)
@@ -231,7 +224,6 @@ func (h *BlockHeaderHasher) Update(minerNum int, header *cruzbit.BlockHeader, ta
 
 		// transaction_count
 		if offset != 0 || h.previousTransactionCount != header.TransactionCount {
-			bufferChanged = true
 			h.previousTransactionCount = header.TransactionCount
 
 			// write out the new value (or old value at a new location)
@@ -254,45 +246,10 @@ func (h *BlockHeaderHasher) Update(minerNum int, header *cruzbit.BlockHeader, ta
 		h.bufLen += offset
 	}
 
-	if OPENCL_ENABLED {
-		// devices don't return a hash just a solving nonce (if found)
-		nonce := h.updateDevice(minerNum, header, target, bufferChanged)
-		if nonce == 0x7FFFFFFFFFFFFFFF {
-			// not found
-			h.result.SetBytes(
-				// indirectly let miner.go know we failed
-				[]byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-					0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-					0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-					0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff},
-			)
-			return h.result, h.hashesPerAttempt
-		} else {
-			log.Printf("GPU miner %d found a possible solution: %d, double-checking it...\n",
-				minerNum, nonce)
-			// rebuild the buffer with the new nonce since we don't update it
-			// per attempt when using CUDA/OpenCL.
-			header.Nonce = nonce
-			h.initBuffer(header)
-		}
-	}
-
 	// hash it
 	h.hasher.Reset()
 	h.hasher.Write(h.buffer[:h.bufLen])
 	h.hasher.Read(h.resultBuf[:])
 	h.result.SetBytes(h.resultBuf[:])
 	return h.result, h.hashesPerAttempt
-}
-
-// Handle mining with GPU devices
-func (h *BlockHeaderHasher) updateDevice(minerNum int, header *cruzbit.BlockHeader, target cruzbit.BlockID, bufferChanged bool) int64 {
-	if bufferChanged {
-		// update the device's copy of the buffer
-		lastOffset := h.nonceOffset + h.nonceLen
-		h.hashesPerAttempt = OpenCLMinerUpdate(minerNum, h.buffer, h.bufLen,
-			h.nonceOffset, lastOffset, target)
-	}
-	// try for a solution
-	return OpenCLMinerMine(minerNum, header.Nonce)
 }
