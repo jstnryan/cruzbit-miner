@@ -143,6 +143,8 @@ func (p *Peer) run() {
 
 				// send outgoing submit_work message to peer
 				m := Message{Type: "submit_work", Body: sw}
+				js, _ := json.Marshal(m)
+				log.Printf("submit_work:\n\n%s\n\n", js)
 				p.conn.SetWriteDeadline(time.Now().Add(writeWait))
 				if err := p.conn.WriteJSON(m); err != nil {
 					log.Printf("Write error: %s, to: %s\n", err, p.conn.RemoteAddr())
